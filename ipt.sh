@@ -48,7 +48,7 @@ iptables-restore < /tmp/ipt_scrub
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j LOG \
---log-ip-options --log-prefix "${logprefix} XtraSmallJunk "
+--log-ip-options --log-prefix "${logprefix} XtraSmallJunk> "
 
 ## PACKETS THAT ARE TOO BIG
 ##
@@ -59,7 +59,7 @@ iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j LOG
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 2521:65535 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 2521:65535 -j LOG \
---log-ip-options --log-prefix "${logprefix} XtraLargeJunk "
+--log-ip-options --log-prefix "${logprefix} XtraLargeJunk> "
 
 
 ## Prevent UDP spam
@@ -72,7 +72,7 @@ iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 -m hashlimit --hashlimit-name 1kflood --hashlimit-mode srcip,dstport --hashlimit-above 1000/sec -j LOG \
---log-ip-options --log-prefix "${logprefix} 1k pps "
+--log-ip-options --log-prefix "${logprefix} 1k pps> "
 
 
 ## Prevent "new" state spam aka a2s spam
@@ -80,12 +80,12 @@ iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 ## drop em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 -m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 2/s --hashlimit-burst 3 -j DROP
+-m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 2 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 -m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 2/s --hashlimit-burst 3 -j LOG \
---log-ip-options --log-prefix "${logprefix} NewStateSpam "
+-m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 2 -j LOG \
+--log-ip-options --log-prefix "${logprefix} A2S Spam> "
 
 
 ## Allow "Established" packets so that we dont stomp on legit gamers
