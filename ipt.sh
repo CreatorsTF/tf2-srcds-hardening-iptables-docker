@@ -16,6 +16,8 @@ fi
 # this isnt just for fun, this lets me easily grep for the rules and delete and recreate them
 comment="-m comment --comment="sappho.io""
 logprefix="[srcds ipt]"
+# log up to every 10 seconds at max so we dont hog io
+loglimit="-m limit --limit 6/min"
 portmin=27000
 portmax=28015
 ports=""
@@ -30,6 +32,7 @@ else
     chain="INPUT"
 fi
 
+echo ""
 ## Delete any existing rules we already wrote
 ##
 ##
@@ -47,7 +50,7 @@ iptables-restore < /tmp/ipt_scrub
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j LOG \
---log-ip-options --log-prefix "${logprefix} XtraSmallJunk> "
+${loglimit} --log-ip-options --log-prefix "${logprefix} < XtraSmallJunk > "
 
 ## PACKETS THAT ARE TOO BIG
 ##
@@ -58,34 +61,30 @@ iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 0:32 -j LOG
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 2521:65535 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} -m length --length 2521:65535 -j LOG \
---log-ip-options --log-prefix "${logprefix} XtraLargeJunk> "
+${loglimit} --log-ip-options --log-prefix "${logprefix} < XtraLargeJunk > "
 
 
 ## Prevent UDP spam
 ##
-## We should never be seeing 1k packets a second from the same ip lol
+## We should never be seeing 500 packets a second from the same ip lol
 ##
 ## drop em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
--m hashlimit --hashlimit-name 1kflood --hashlimit-mode srcip,dstport --hashlimit-above 1000/sec -j DROP
-## log em
+-m hashlimit --hashlimit-name 500flood --hashlimit-mode srcip --hashlimit-above 500/sec -j DROP
+# log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
--m hashlimit --hashlimit-name 1kflood --hashlimit-mode srcip,dstport --hashlimit-above 1000/sec -j LOG \
---log-ip-options --log-prefix "${logprefix} 1k pps> "
+-m hashlimit --hashlimit-name 500flood --hashlimit-mode srcip --hashlimit-above 500/sec -j LOG \
+${loglimit} --log-ip-options --log-prefix "${logprefix} < 500 pps > "
 
-
-## Prevent "new" state spam aka a2s spam
+## Prevent port flooding
 ##
 ## drop em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
--m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 2 -j DROP
+-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 3 -j DROP
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
--m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 2 -j LOG \
---log-ip-options --log-prefix "${logprefix} A2S Spam> "
-
+-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 3 -j LOG \
+${loglimit} --log-ip-options --log-prefix "${logprefix} < A2s Spam > "
 
 ## Allow "Established" packets so that we dont stomp on legit gamers
 ##
@@ -98,6 +97,7 @@ iptables-save > /etc/iptables/rules.v4
 
 cat /etc/iptables/rules.v4 | grep sapph
 
+echo ""
 if [[ ${usedocker} == true ]]; then
     echo "Hardened SRCDS (in docker)."
 else
