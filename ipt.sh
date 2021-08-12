@@ -62,11 +62,11 @@ iptables -I ${dockeruser} 1 -p udp ${comment} ${conntrack} \
 ## drop em
 iptables -I ${dockeruser} 1 -p udp ${comment} ${conntrack} \
 -m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 3/s --hashlimit-burst 5 -j DROP
+-m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 2/s --hashlimit-burst 3 -j DROP
 ## log em
 iptables -I ${dockeruser} 1 -p udp ${comment} ${conntrack} \
 -m state --state NEW \
--m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 2/s --hashlimit-burst 4 -j LOG \
+-m hashlimit --hashlimit-name newflood --hashlimit-mode srcip --hashlimit-above 2/s --hashlimit-burst 3 -j LOG \
 --log-ip-options --log-prefix "${logprefix} NewStateSpam "
 
 
