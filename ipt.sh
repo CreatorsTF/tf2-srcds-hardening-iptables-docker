@@ -1,7 +1,6 @@
 #!/bin/bash
 # sourceds hardening with iptables and docker
 # this *should* hopefully prevent most petty/smallish a2s attacks
-# keep in mind this will only work if your srcds servers are on docker containers
 # FUCK YOU VALVE I *SHOULD NOT* HAVE HAD TO WRITE THIS
 # with influence from https://forums.alliedmods.net/showthread.php?t=151551
 # by sappho.io
