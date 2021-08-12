@@ -23,10 +23,6 @@ iptables-save > /tmp/ipt
 grep -v -h "sappho.io" /tmp/ipt > /tmp/ipt_scrub
 iptables-restore < /tmp/ipt_scrub
 
-
-## Persist them - needs iptables-persistant
-iptables-save > /etc/iptables/rules.v4
-
 ## PACKETS THAT ARE TOO SMALL
 ##
 ## There should never be any UDP packets below 32 bytes.
@@ -78,5 +74,9 @@ iptables -I ${dockeruser} 1 -p udp ${comment} ${conntrack} \
 ##
 ##
 iptables -I ${dockeruser} 1 -p udp ${comment} -m state --state ESTABLISH -j ACCEPT
+
+
+## Persist them - needs iptables-persistant
+iptables-save > /etc/iptables/rules.v4
 
 echo "Hardened SRCDS".
