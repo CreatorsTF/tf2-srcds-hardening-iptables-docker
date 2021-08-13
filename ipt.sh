@@ -91,7 +91,7 @@ iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 ## log em
 iptables -I ${chain} 1 -p udp ${comment} ${ports} \
 -m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip --hashlimit-above 1/s --hashlimit-burst 3 -j LOG \
-${loglimit} --log-ip-options --log-prefix "${logprefix} < A2s Spam > "
+${loglimit} --log-ip-options --log-prefix "${logprefix} < A2S Spam > "
 
 ## Allow "Established" packets so that we dont stomp on legit gamers
 ## This rule goes last so it gets inserted first
