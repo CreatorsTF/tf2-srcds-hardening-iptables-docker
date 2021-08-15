@@ -101,7 +101,7 @@ iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} -m length --length 2521:65535 
 ## --
 ## (desc.) We should never be seeing 300 packets a second from the same ip lol
 
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 300/sec --hashlimit-burst 3"
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 300/sec"
 
 ## drop em ##
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
