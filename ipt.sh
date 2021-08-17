@@ -76,72 +76,63 @@ iptables-restore < /tmp/ipt_scrub
 
 # PACKETS TOO SMALL: There should never be any UDP packets below 32 bytes.
 
-## drop em ##
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} -m length --length 0:32 \
--j DROP
-## log em ##
+    -j DROP
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} -m length --length 0:32 \
--j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} < XtraSmallJunk > "
+    -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} len < 32: "
 
 # PACKET TOO BIG: There should never be any packets above the following length.
 
 # (net_maxroutable) + (net_splitrate) * (net_maxfragments)
-#  1260             +  1              *  1260             
+#  1260             +  1              *  1260
 #  = 2521 bytes
 
-## drop em ##
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} -m length --length 2521:65535 \
--j DROP
-## log em ##
+    -j DROP
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} -m length --length 2521:65535 \
--j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} < XtraLargeJunk > "
+    -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} len > 2521: "
 
 
 ## 4. UDP spam (300 req/s limit)
 ## --
-## (desc.) We should never be seeing 300 packets a second from the same ip lol
+## (desc.) We should never be seeing 100 packets a second from the same ip not already established or related
 
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 300/sec"
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 100/sec"
 
-## drop em ##
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-	-j DROP
-## log em ##
+    -j DROP
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-        -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} R: >300 req/s:"
+    -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} R: >100 req/s:"
 
 ## 3. A2S flooding
 ## --
-## Thank you arie for the recommendation. 
+## Thank you arie for the recommendation.
 ##
 ## (desc.) Used to check packetstate = NEW,
-##   but there's no reason to as we already allow legit packets with our 
+##   but there's no reason to as we already allow legit packets with our
 ##   later ALLOW ESTABLISHED rule.
 
-# Johnny: Docker-enabled uses `dstip` cause all non-allocated ports are 
+# Johnny: Docker-enabled uses `dstip` cause all non-allocated ports are
 #           routed to one host. This makes it easier to filter and reduces
 #           our hashes.
-RULE_FILTER="-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip,dstport --hashlimit-above 2/sec --hashlimit-burst 3"
+RULE_FILTER="-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip,dstport --hashlimit-above 1/sec --hashlimit-burst 4"
 if [[ ${usedocker} == true ]]; then
-    RULE_FILTER="-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip,dstip --hashlimit-above 2/sec --hashlimit-burst 3"
+    RULE_FILTER="-m hashlimit --hashlimit-name a2sflood --hashlimit-mode srcip,dstip --hashlimit-above 1/sec --hashlimit-burst 4"
 fi
 
-# drop em #
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-	-j DROP
+    -j DROP
 
-# log em #
 iptables -I ${chain} 1 -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-        -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} A2S FLOOD:"
+    -j LOG ${LOGLIMIT} --log-ip-options --log-prefix "${LOGPREFIX} A2S FLOOD:"
 
 ## 2. UDP game packets
 ## --
 ## Allow "Established" packets so that we dont stomp on legit gamers
 ## This rule goes last so it gets inserted first
 
-# love em #
-iptables -I ${chain} 1 -p udp ${COMMENT} -m state --state ESTABLISH \
-        -j ACCEPT
+iptables -I ${chain} 1 -p udp ${COMMENT} -m state --state ESTABLISH,RELATED \
+    -j ACCEPT
 
 
 ## 1. Trusted hosts
@@ -150,7 +141,7 @@ iptables -I ${chain} 1 -p udp ${COMMENT} -m state --state ESTABLISH \
 
 if [[ -f /etc/hosts.trusted ]]; then
     for host in $(cat /etc/hosts.trusted); do
-    	iptables -I ${chain} 1 -p udp ${COMMENT} -s "$host" -j ACCEPT
+        iptables -I ${chain} 1 -p udp ${COMMENT} -s "$host" -j ACCEPT
     done
 fi
 
