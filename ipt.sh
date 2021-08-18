@@ -68,7 +68,7 @@ iptables-restore -c < /tmp/ipt_scrub
 ## 3. ALLOW - "ESTABLISHED, RELATED" legit UDP game packets [USES CONNTRACK]
 ## 4. DROP  - SRC Conformity (Strict Length Checking = too big)
 ## 5. DROP  - SRC Conformity (Strict Length Checking = too small)
-## 6. DROP  - UDP spam (>10 req/s)
+## 6. DROP  - UDP spam (>25 req/s)
 ## 7. DROP  - A2S flooding (>1/s burst 3)
 ##
 ## -----------------------------------------------------------------
@@ -88,16 +88,16 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j LOG ${LOGLIMIT} --log-ip-options \
     --log-prefix "${LOGPREFIX} a2s flood: "
 
-## 6: UDP spam (10 req/s limit)
-## We should never be seeing 10 packets a second from the same ip not already established or related
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 10/sec"
+## 6: UDP spam (25 req/s limit)
+## We should never be seeing 25 packets a second from the same ip not already established or related
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 25/sec"
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j DROP
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j LOG ${LOGLIMIT} --log-ip-options \
-    --log-prefix "${LOGPREFIX} >10 req/s: "
+    --log-prefix "${LOGPREFIX} >25 req/s: "
 
 
 ## 5: PACKET TOO smol: There should never be any packets packets below 32 bytes.
