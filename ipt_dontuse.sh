@@ -1,4 +1,7 @@
 #!/bin/bash
+# THIS DOESN'T WORK DON'T USE IT
+
+
 # sourceds hardening with iptables and docker
 # this *should* hopefully prevent most petty/smallish a2s attacks
 # VALVE I *SHOULD NOT* HAVE HAD TO WRITE THIS
@@ -49,12 +52,24 @@ else
 fi
 
 echo ""
+#recent_real="/proc/net/xt_recent"
+#recent_tmp="/tmp/xt_recent"
 
 ## Delete any existing rules we already wrote
 ## --
 rm /tmp/ipt
 rm /tmp/ipt_scrub
 
+# copy our recent ip addrs
+#mkdir ${recent_tmp} -p
+#
+#for file in ${recent_real}/*;
+#    do
+#        basefile=$(basename ${file})
+#        cp ${file} ${recent_tmp}/${basefile}
+#        echo "cp ${file} ${recent_tmp}/${basefile}"
+#    done
+#
 ## Save & restore
 ## --
 iptables-save -c > /tmp/ipt
@@ -62,18 +77,55 @@ grep -v -h "sappho.io" /tmp/ipt > /tmp/ipt_scrub
 iptables-restore -c < /tmp/ipt_scrub
 
 ## =================================================================
-## RULES (in order)
-## 1. ALLOW - Trusted hosts
-## 2. DROP  - "INVALID" UDP packets
-## 3. ALLOW - "ESTABLISHED, RELATED" legit UDP game packets [USES CONNTRACK]
-## 4. DROP  - SRC Conformity (Strict Length Checking = too big)
-## 5. DROP  - SRC Conformity (Strict Length Checking = too small)
-## 6. DROP  - UDP spam (>10 req/s)
-## 7. DROP  - A2S flooding (>1/s burst 3)
+## RULES
+## 0. WHITELIST players that connect and UNWHITELIST them when they leave
+## 1. ALLOW Trusted hosts
+## 2. ALLOW Legit UDP game packets [USES CONNTRACK]
+## 3. SRC Conformity (Strict Length Checking = too big)
+## 4. SRC Conformity (Strict Length Checking = too small)
+## 5. UDP spam (100 req/s limit)
+## 6. A2S flooding
 ##
 ## -----------------------------------------------------------------
 
-## 7: A2S flooding
+#iptables -I PREROUTING 1 -t mangle -p udp ${ports} -i ${defaultin} ${COMMENT} \
+#    -m recent --name signedon ! --rcheck --seconds 25200 --reap --hitcount 1 \
+#    -j DROP
+
+#iptables -I PREROUTING 1 -t mangle -p udp ${ports} -i ${defaultin} ${COMMENT} \
+#    -m recent --name signedon ! --rcheck --seconds 25200 --reap --hitcount 1 -j LOG \
+#    ${LOGLIMIT_FAST} --log-ip-options --log-level error \
+#    --log-prefix "PACKET NOT WHITELISTED: "
+
+#iptables -I PREROUTING 1 -t mangle -p udp ${ports} -i ${defaultin} ${COMMENT} \
+#    -m recent --name signedon --rcheck --hitcount 10 -j LOG \
+#    ${LOGLIMIT_FAST} --log-ip-options --log-level error \
+#    --log-prefix "10 SIGNONS: "
+
+# this hex string is sent in every "i am connecting to the server" packet that comes from clients
+# probably
+# -steph
+
+#iptables -I PREROUTING 1 -t raw -p udp ${ports} -i ${defaultin} ${COMMENT} \
+#    -m string --algo bm --hex-string '|9b5bd9181d88581e48dd5c999c0bc0|' \
+#    -m recent --name signedon --remove \
+#    -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error \
+#    --log-prefix "SIGNOFF: "
+#    -m length --length 45
+
+# similarly, this string is sent in every "goodbye see ya later" packet that comes from clients
+# probably.
+# -steph
+
+#iptables -I PREROUTING 1 -t raw -p udp ${ports} -i ${defaultin} ${COMMENT} \
+#    -m string --algo bm --hex-string '|3030303030303030303000|' \
+#    -m recent --name signedon --set \
+#    -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error \
+#    --log-prefix "SIGNON: "
+    #-m length --length 28
+
+
+## 6: A2S flooding
 ## We used to check packetstate = NEW,
 ## but there's no reason to as we already allow legit packets with our
 ## later ALLOW ESTABLISHED rule.
@@ -88,8 +140,8 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j LOG ${LOGLIMIT} --log-ip-options \
     --log-prefix "${LOGPREFIX} a2s flood: "
 
-## 6: UDP spam (10 req/s limit)
-## We should never be seeing 10 packets a second from the same ip not already established or related
+## 5: UDP spam (50 req/s limit)
+## We should never be seeing 50 packets a second from the same ip not already established or related
 RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 10/sec"
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
@@ -100,7 +152,7 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     --log-prefix "${LOGPREFIX} >10 req/s: "
 
 
-## 5: PACKET TOO smol: There should never be any packets packets below 32 bytes.
+## 4: PACKET TOO smol: There should never be any packets packets below 32 bytes.
 RULE_FILTER="-m length --length 0:32"
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
@@ -110,7 +162,7 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j LOG ${LOGLIMIT} --log-ip-options \
     --log-prefix "${LOGPREFIX} len < 32: "
 
-## 4: PACKET TOO BIG: There should never be any packets above the following length.
+## 3: PACKET TOO BIG: There should never be any packets above the following length.
 ## (net_maxroutable) + (net_splitrate) * (net_maxfragments)
 ##  1260             +  1              *  1260
 ##  = 2521 bytes
@@ -124,7 +176,7 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     --log-prefix "${LOGPREFIX} len > 2521: "
 
 
-## 3: UDP game packets
+## 2: UDP game packets
 ## Allow "Established" packets so that we dont stomp on legit gamers
 ## This rule goes last so it gets inserted first
 RULE_FILTER="-m state --state ESTABLISHED,RELATED"
@@ -132,19 +184,29 @@ RULE_FILTER="-m state --state ESTABLISHED,RELATED"
 ${ipt} -p udp ${COMMENT} ${RULE_FILTER} \
     -j ACCEPT
 
-## 2: Reject invalid packets
+# this doesn't fucking work
+# -steph
+#${ipt} -p udp ${COMMENT} -i ${defaultin} \
+#    -m recent --name signedon --rcheck --seconds 25200 --reap --hitcount 1 \
+#    -j ACCEPT
+
+#${ipt} -p udp ${COMMENT} -i ${defaultin} \
+#    -m recent --name signedon --rcheck --seconds 25200 --reap --hitcount 1 \
+#    -j LOG
+
+## 1: Reject invalid packets
 ##
 ##
 RULE_FILTER="-m state --state INVALID"
 
-iptables -I PREROUTING 1 -t mangle -p all ${COMMENT} ${RULE_FILTER} \
-    -j DROP
+${ipt} -p udp ${COMMENT} ${RULE_FILTER} \
+    -j REJECT
 
-iptables -I PREROUTING 1 -t mangle -p all ${COMMENT} ${RULE_FILTER} \
+${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j LOG ${LOGLIMIT} --log-ip-options \
     --log-prefix "${LOGPREFIX} INVALID PACKET: "
 
-## 1: Trusted hosts
+## 0: Trusted hosts
 ## Uses /etc/hosts.trusted to use a list of hosts to allow unrestricted communication.
 if [[ -f /etc/hosts.trusted ]]; then
     for host in $(cat /etc/hosts.trusted); do
@@ -166,6 +228,20 @@ iptables-save > /etc/iptables/rules.v4
 ## --
 cat /etc/iptables/rules.v4 | grep sapph
 
+#echo ""
+#echo "Re-populating xt_recent ip lists..."
+#echo ""
+#for file in ${recent_tmp}/*;
+#    do
+#        basefile=$(basename ${file})
+#        cat $file | while read line; do
+#            echo $line | cut -d " " -f 1 | sed 's/src=/+/' > ${recent_real}/${basefile}
+#            echo $line | cut -d " " -f 1 | sed 's/src=/+/'
+#        done
+#
+#    done
+
+
 ## Final feedback
 ## --
 echo ""
@@ -174,3 +250,4 @@ if [[ ${usedocker} == true ]]; then
 else
     echo "Hardened SRCDS."
 fi
+
