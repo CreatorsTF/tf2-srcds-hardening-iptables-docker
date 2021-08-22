@@ -89,8 +89,8 @@ ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     --log-prefix "${LOGPREFIX} a2s flood: "
 
 ## 6: UDP spam (25 req/s limit)
-## We should never be seeing 25 packets a second from the same ip not already established or related
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip --hashlimit-above 25/sec"
+## We should never be seeing 25 packets a second from the same ip to the same port not already established or related
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 25/sec"
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -j DROP
