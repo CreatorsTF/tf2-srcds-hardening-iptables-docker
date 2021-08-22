@@ -77,7 +77,7 @@ iptables-restore -c < /tmp/ipt_scrub
 ## We used to check packetstate = NEW,
 ## but there's no reason to as we already allow legit packets with our
 ## later ALLOW ESTABLISHED rule.
-RULE_FILTER="-m hashlimit --hashlimit-name a2s --hashlimit-mode srcip --hashlimit-above 1/sec --hashlimit-burst 3"
+RULE_FILTER="-m hashlimit --hashlimit-name a2s --hashlimit-mode srcip,dstport --hashlimit-above 1/sec --hashlimit-burst 3"
 
 ${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
     -m string --algo bm --hex-string '|ffffffff54|' \
