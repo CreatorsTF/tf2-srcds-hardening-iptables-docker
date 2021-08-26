@@ -18,7 +18,7 @@ LOGLIMIT_FAST="-m limit --limit 10/min"
 
 # port range to protect
 PORTMIN=27000
-PORTMAX=28015
+PORTMAX=29000
 
 
 ## =================================================================
