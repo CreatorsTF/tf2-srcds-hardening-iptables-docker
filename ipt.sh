@@ -114,17 +114,20 @@ RULE_FILTER="-m string --algo bm --hex-string"
 # 5: Log client signons
 ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
     ${RULE_FILTER} '|3030303030303030303000|'                               \
+    -m length --length 48                                                   \
     -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error              \
     --log-prefix "${LOGPREFIX} signon: "
 
 # 4: Grab client signon packets to whitelist
 ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
     ${RULE_FILTER} '|3030303030303030303000|'                               \
+    -m length --length 48                                                   \
     -j SET --add-set signedon src
 
 # 3: Log client signoffs
 ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
     ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
+    -m length --length 65                                                   \
     -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error              \
     --log-prefix "${LOGPREFIX} signoff: "
 
@@ -132,6 +135,7 @@ ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
 # They time out after 3 hrs anyway regardless so
 ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
     ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
+    -m length --length 65                                                   \
     -j SET --del-set signedon src
 
 
