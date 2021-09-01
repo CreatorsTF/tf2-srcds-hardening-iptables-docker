@@ -4,43 +4,41 @@
 # VALVE I *SHOULD NOT* HAVE HAD TO WRITE THIS
 # with influence from https://forums.alliedmods.net/showthread.php?t=151551
 # by sappho.io
+# REQUIRES: a recent-ish version of iptables, iptables-persistent, ipset
 
-## =================================================================
-## CONFIGURATION
-## -----------------------------------------------------------------
+
+#########################################################################
+# CONFIG
+#########################################################################
+
+
 # this isnt just for fun, this lets me easily grep for the rules and delete and recreate them
-COMMENT="-m comment --comment="sappho.io""
+# i know this commenting is weird, bash sucks ass
+COMMENT="-m comment --comment="srcds-hardening-by-sappho.io""
 LOGPREFIX="[srcds-ipt]"
-# log up to every 30 seconds at max so we dont hog io
-LOGLIMIT="-m limit --limit 2/min"
+# log up to every 60 seconds at max so we dont hog io
+LOGLIMIT="-m limit --limit 1/min"
 
-LOGLIMIT_FAST="-m limit --limit 10/min"
+LOGLIMIT_FAST="-m limit --limit 100/min"
 
 # port range to protect
 PORTMIN=27000
 PORTMAX=29000
 
 
-## =================================================================
-## INITIALISATION
-## -----------------------------------------------------------------
+#########################################################################
+# INIT
+#########################################################################
 
-## Docker detection
-## --
+
+# Docker detection
 usedocker=false
-
-if dpkg -l docker\* &> /dev/null; then
-    usedocker=true
-fi
-
-
-defaultin=$(route | grep '^default' | grep -o '[^ ]*$')
-
+# iptables command setup
 ipt=""
 
-ports="-m multiport --dports ${PORTMIN}:${PORTMAX} "
 
-if [[ ${usedocker} == true ]]; then
+if (netstat -aupl | grep docker-proxy) &> /dev/null; then
+    usedocker=true
     echo "Detected docker."
     ipt="iptables -I DOCKER-USER 1"
 else
@@ -48,126 +46,198 @@ else
     ipt="iptables -I INPUT 1"
 fi
 
+# default interface detection
+defaultin=$(route | grep '^default' | grep -o '[^ ]*$')
+
+# ports setup
+ports="-m multiport --dports ${PORTMIN}:${PORTMAX} "
+
+# feedback
 echo ""
 
-## Delete any existing rules we already wrote
-## --
+# for raw prerouting
+ipt_pre_raw="iptables -I PREROUTING 1 -t raw "
+
+# for raw mangling
+ipt_pre_mangle="iptables -I PREROUTING 1 -t mangle "
+
+# Delete any existing rules we already wrote
 rm /tmp/ipt
 rm /tmp/ipt_scrub
 
-## Save & restore
-## --
+# Save & restore - requires iptables-persistent!
 iptables-save -c > /tmp/ipt
 grep -v -h "sappho.io" /tmp/ipt > /tmp/ipt_scrub
 iptables-restore -c < /tmp/ipt_scrub
 
-## =================================================================
-## RULES (in order)
-## 1. ALLOW - Trusted hosts
-## 2. DROP  - "INVALID" UDP packets
-## 3. ALLOW - "ESTABLISHED, RELATED" legit UDP game packets [USES CONNTRACK]
-## 4. DROP  - SRC Conformity (Strict Length Checking = too big)
-## 5. DROP  - SRC Conformity (Strict Length Checking = too small)
-## 6. DROP  - UDP spam (>25 req/s)
-## 7. DROP  - A2S flooding (>1/s burst 3)
-##
-## -----------------------------------------------------------------
 
-## 7: A2S flooding
-## We used to check packetstate = NEW,
-## but there's no reason to as we already allow legit packets with our
-## later ALLOW ESTABLISHED rule.
-RULE_FILTER="-m hashlimit --hashlimit-name a2s --hashlimit-mode srcip,dstport --hashlimit-above 1/sec --hashlimit-burst 3"
-
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -m string --algo bm --hex-string '|ffffffff54|' \
-    -j DROP
-
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -m string --algo bm --hex-string '|ffffffff54|' \
-    -j LOG ${LOGLIMIT} --log-ip-options \
-    --log-prefix "${LOGPREFIX} a2s flood: "
-
-## 6: UDP spam (25 req/s limit)
-## We should never be seeing 25 packets a second from the same ip to the same port not already established or related
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 25/sec"
-
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -j DROP
-
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -j LOG ${LOGLIMIT} --log-ip-options \
-    --log-prefix "${LOGPREFIX} >25 req/s: "
+# create our ipset rules - requires ipset!
+ipset create permatrusted hash:ip    timeout 10800 || true
+ipset create  signed_on   hash:ip,port timeout 240 || true
 
 
-## 5: PACKET TOO smol: There should never be any packets packets below 32 bytes.
+#########################################################################
+# PREROUTING RAW
+#########################################################################
+
+
+# 7: PACKET TOO SMOL
+# There should never be any packets packets below 32 bytes
 RULE_FILTER="-m length --length 0:32"
 
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}    \
     -j DROP
 
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -j LOG ${LOGLIMIT} --log-ip-options \
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}    \
+    -j LOG ${LOGLIMIT} --log-ip-options                                     \
     --log-prefix "${LOGPREFIX} len < 32: "
 
-## 4: PACKET TOO BIG: There should never be any packets above the following length.
-## (net_maxroutable) + (net_splitrate) * (net_maxfragments)
-##  1260             +  1              *  1260
-##  = 2521 bytes
+
+# 6: PACKET TOO BIG
+# There should never be any packets above this length:
+# (net_maxroutable) + (net_splitrate  * net_maxfragments)
+#  1260             + (1              *  1260)
+#  = 2520 (+1) bytes
 RULE_FILTER="-m length --length 2521:65535"
 
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}    \
     -j DROP
 
-${ipt} -p udp ${COMMENT} ${ports} ${RULE_FILTER} \
-    -j LOG ${LOGLIMIT} --log-ip-options \
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}    \
+    -j LOG ${LOGLIMIT} --log-ip-options                                     \
     --log-prefix "${LOGPREFIX} len > 2521: "
 
+RULE_FILTER="-m string --algo bm --hex-string"
 
-## 3: UDP game packets
-## Allow "Established" packets so that we dont stomp on legit gamers
-## This rule goes last so it gets inserted first
-RULE_FILTER="-m state --state ESTABLISHED,RELATED"
+# 5: Log client signons - string is at the end of the packet
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
+    ${RULE_FILTER} '|3030303030303030303000|'                               \
+    -m length --length 48 --from 26 --to 48                                  \
+    -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error              \
+    --log-prefix "${LOGPREFIX} signon: "
 
-${ipt} -p udp ${COMMENT} ${RULE_FILTER} \
-    -j ACCEPT
+# 4: Grab client signon packets to whitelist
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
+    ${RULE_FILTER} '|3030303030303030303000|'                               \
+    -m length --length 48 --from 26 --to 48                                  \
+    -j SET --add-set signed_on src,dst --timeout 120
 
-## 2: Reject invalid packets
-##
-##
-RULE_FILTER="-m state --state INVALID"
+# 3: Log client signoffs - string is at the end of the packet
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
+    ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
+    -m length --length 65 --from 35 --to 65                                 \
+    -j LOG ${LOGLIMIT_FAST} --log-ip-options --log-level error              \
+    --log-prefix "${LOGPREFIX} signoff: "
 
-iptables -I PREROUTING 1 -t mangle -p all ${COMMENT} ${RULE_FILTER} \
-    -j DROP
+# 2: Grab client signoff packets to unwhitelist clients
+# They will timeout after ~65 seconds if no data is received anyway.
+${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT}                            \
+    ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
+    -m length --length 65 --from 35 --to 65                                 \
+    -j SET --del-set signed_on src,dst
 
-iptables -I PREROUTING 1 -t mangle -p all ${COMMENT} ${RULE_FILTER} \
-    -j LOG ${LOGLIMIT} --log-ip-options \
-    --log-prefix "${LOGPREFIX} INVALID PACKET: "
 
-## 1: Trusted hosts
-## Uses /etc/hosts.trusted to use a list of hosts to allow unrestricted communication.
-if [[ -f /etc/hosts.trusted ]]; then
-    for host in $(cat /etc/hosts.trusted); do
-        ${ipt} -p udp ${COMMENT} -s "$host" -j ACCEPT
-    done
-    echo "allowing trusted hosts"
+
+# 1: ALWAYS allow trusted hosts
+# Uses /etc/hosts.trusted to use a list of hosts to allow unrestricted communication.
+    if [[ -f /etc/hosts.trusted ]]; then
+        for host in $(cat /etc/hosts.trusted); do
+
+${ipt_pre_raw} -p udp ${COMMENT} -s "$host"                                 \
+    -j SET --add-set permatrusted src --exist
+
+        done
+        echo "allowing trusted hosts"
+    fi
+
+
+# 0: Disable conntracking on our srcds ports
+
+if [[ ${usedocker} == true ]]; then
+    # if we're using docker we need to disable conntrack wholesale
+    # docker needs the whole thing gone, else it will get very confused and not route things properly
+    modprobe nf_conntrack nf_conntrack_helper=0
+    # make it persistent across boots
+    echo "options nf_conntrack nf_conntrack_helper=0" > /etc/modprobe.d/no_conntrack_helper.conf
+else
+    # otherwise we can just do the specific ports
+    ${ipt_pre_raw} -p udp ${ports} ${COMMENT}                               \
+        -j NOTRACK
 fi
 
-## =================================================================
-## CLEAN-UP
-## -----------------------------------------------------------------
 
-## Persist them - needs iptables-persistant!
-## --
+
+#########################################################################
+# PREROUTING MANGLE
+#########################################################################
+
+
+# 1: Drop invalid packets
+RULE_FILTER="-m state --state INVALID"
+
+${ipt_pre_mangle} -p all ${COMMENT} ${RULE_FILTER}                          \
+    -j DROP
+
+${ipt_pre_mangle} -p all ${COMMENT} ${RULE_FILTER}                          \
+    -j LOG ${LOGLIMIT} --log-ip-options                                     \
+    --log-prefix "${LOGPREFIX} INVALID PACKET: "
+
+
+#########################################################################
+# INPUT / DOCKER-USER
+#########################################################################
+
+
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 2/sec --hashlimit-burst 4"
+# Ignore signed on and trusted users
+NOMATCH_TRUSTED=" -m set ! --match-set permatrusted  src    "
+NOMATCH_SIGNEDON="-m set ! --match-set signed_on     src,dst"
+
+# 4: UDP Spam
+# Should never see so much traffic from the same IP to the same port
+${ipt} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}            \
+    ${NOMATCH_TRUSTED} ${NOMATCH_SIGNEDON}                                  \
+    -j DROP
+
+# 3: Log udp spam
+${ipt} -p udp -i ${defaultin} ${COMMENT} ${ports} ${RULE_FILTER}            \
+    ${NOMATCH_TRUSTED} ${NOMATCH_SIGNEDON}                                  \
+    -j LOG ${LOGLIMIT} --log-ip-options                                     \
+    --log-prefix "${LOGPREFIX} udpspam: "
+
+
+# 2: Allow signed on gamers to play - only whitelists ip to destip / dport :D
+${ipt} -p udp -i ${defaultin} ${COMMENT}                                    \
+    -m set --match-set signed_on src,dst                                    \
+    -j ACCEPT
+
+# 1: Reset timeout whenever we get some data from this client
+${ipt} -p udp ${COMMENT}                                                    \
+    -m set --match-set signed_on src,dst                                    \
+    -j SET --add-set   signed_on src,dst --timeout 65 --exist
+
+
+# 0: Debug logging
+#${ipt} -p udp ${COMMENT}                                                    \
+#    -m set --match-set signed_on src,dst                                    \
+#    -j LOG ${LOGLIMIT_FAST} --log-ip-options                                \
+#    --log-prefix "${LOGPREFIX} whitelist: "
+
+
+
+#########################################################################
+# CLEANUP
+#########################################################################
+
+
+# Persist these - needs iptables-persistant!
 iptables-save > /etc/iptables/rules.v4
 
 
-## Dump our generated rules
-## --
+# Dump our generated rules
 cat /etc/iptables/rules.v4 | grep sapph
 
-## Final feedback
-## --
+# Final feedback
 echo ""
 if [[ ${usedocker} == true ]]; then
     echo "Hardened SRCDS (in docker)."
