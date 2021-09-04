@@ -72,7 +72,7 @@ iptables-restore -c < /tmp/ipt_scrub
 
 
 # create our ipset rules - requires ipset!
-ipset create permatrusted hash:ip    timeout 10800 || true
+ipset create permatrusted hash:ip    timeout 0     || true
 ipset create  signed_on   hash:ip,port timeout 240 || true
 
 
@@ -188,7 +188,7 @@ ${ipt_pre_mangle} -p all ${COMMENT} ${RULE_FILTER}                          \
 #########################################################################
 
 
-RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 2/sec --hashlimit-burst 4"
+RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 3/sec --hashlimit-burst 10"
 # Ignore signed on and trusted users
 NOMATCH_TRUSTED=" -m set ! --match-set permatrusted  src    "
 NOMATCH_SIGNEDON="-m set ! --match-set signed_on     src,dst"
