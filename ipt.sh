@@ -21,6 +21,9 @@ reset=$(    tput sgr0   )
 # CONFIG
 ################################################################################
 
+# for crontabbing
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # this isnt just for fun, this lets us easily grep for the rules and delete and recreate them
 
 COMMENT="-m comment --comment=srcds-hardening-by-sappho.io"
