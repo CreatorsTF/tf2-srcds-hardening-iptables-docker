@@ -1,4 +1,4 @@
-	#!/bin/bash
+#!/bin/bash
 # sourceds hardening with iptables and docker
 # this *should* hopefully prevent most petty/smallish a2s attacks
 # VALVE I *SHOULD NOT* HAVE HAD TO WRITE THIS
