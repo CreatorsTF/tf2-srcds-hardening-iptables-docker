@@ -11,6 +11,8 @@
 # CONFIG
 #########################################################################
 
+# for crontabbing
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # this isnt just for fun, this lets me easily grep for the rules and delete and recreate them
 # i know this commenting is weird, bash sucks ass
