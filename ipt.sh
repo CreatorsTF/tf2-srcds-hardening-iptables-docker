@@ -134,7 +134,7 @@ big_len()
 udpspam()
 {
     # We should never see so much traffic from the same IP to the same port. If we are it's probably naughty.
-    RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 3/sec --hashlimit-burst 10"
+    RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 8/sec --hashlimit-burst 16"
 
     # Ignore signed on and trusted users for these rules
     NOMATCH_TRUSTED=" -m set ! --match-set permatrusted  src    "
