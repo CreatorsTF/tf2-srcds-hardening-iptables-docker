@@ -134,7 +134,7 @@ big_len()
 udpspam()
 {
     # We should never see so much traffic from the same IP to the same port. If we are it's probably naughty.
-    RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 3/sec --hashlimit-burst 10"
+    RULE_FILTER="-m hashlimit --hashlimit-name speedlimit --hashlimit-mode srcip,dstport --hashlimit-above 8/sec --hashlimit-burst 16"
 
     # Ignore signed on and trusted users for these rules
     NOMATCH_TRUSTED=" -m set ! --match-set permatrusted  src    "
@@ -198,14 +198,18 @@ set_signedoff()
 {
     RULE_FILTER="-m string --algo bm --hex-string"
 
+
+    # Ok so, we dont actually need to delete them from our set, bc
+    # theyll get removed anyway after ~65 seconds.
+    # Just log and move on.
+
     # Grab client signoff packets to unwhitelist clients
-    # They will timeout after ~65 seconds if no data is received anyway.
     # 9b5b string is at the end of the packet
-    echo "SET signoffs" >> ${rawhuman}
-    ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports}                   \
-        ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
-        -m length --length 65 --from 35 --to 65                                 \
-        -j SET --del-set signed_on src,dst
+    # echo "SET signoffs" >> ${rawhuman}
+    # ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports}                   \
+    #     ${RULE_FILTER} '|9b5bd9181d88581e48dd5c999c0bc0|'                       \
+    #     -m length --length 65 --from 35 --to 65                                 \
+    #     -j SET --del-set signed_on src,dst
 
     echo "LOG signoffs" >> ${rawhuman}
     ${ipt_pre_raw} -p udp -i ${defaultin} ${COMMENT} ${ports}                   \
@@ -274,7 +278,9 @@ whitelist_signedon
 big_len
 small_len
 reset_timeout_recv_data
+# this only logs
 set_signedoff
+# this actually sets
 set_signedon
 # debug_whitelisted
 disable_conntrack
