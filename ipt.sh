@@ -46,7 +46,7 @@ PORTMAX=29000
 # Docker detection
 usedocker=false
 
-if (netstat -aupl | grep docker-proxy) &> /dev/null; then
+if (which docker); then
     usedocker=true
     echo "Detected docker."
 else
